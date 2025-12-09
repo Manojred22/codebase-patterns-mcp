@@ -1,6 +1,6 @@
 # Weekend Critical Path: RAG for Codebase
 
-**Goal:** Working RAG POC + RFC by Monday  
+**Goal:** Working RAG POC + RFC 
 **Scope:** 5-10 representative repos  
 **Focus:** Quality & Accuracy over Speed
 
