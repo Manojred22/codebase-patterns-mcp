@@ -1,0 +1,21 @@
+# Phase 1: Semantic Search + Phase 2: MCP Server
+
+# RAG Components
+chromadb>=0.4.0
+openai>=1.0.0
+
+# Code Parsing
+tree-sitter==0.21.3
+tree-sitter-languages==1.10.2  # Includes Go, JS, TS, Python parsers
+
+# Utilities
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+tqdm>=4.65.0  # Progress bars for indexing
+click>=8.1.0  # CLI builder
+
+# Testing
+pytest>=7.0.0
+
+# MCP Server (Phase 2) - Manual implementation (Python 3.9 compatible)
+# No MCP SDK needed - we implement JSON-RPC protocol directly

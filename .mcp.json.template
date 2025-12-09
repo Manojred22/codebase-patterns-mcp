@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "codebase-patterns": {
+      "command": "/absolute/path/to/your/codebase-patterns-mcp/run_mcp_server.sh",
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "CHROMA_PATH": "./data/chroma_db",
+        "REPOS_PATH": "./repos"
+      }
+    }
+  }
+}
