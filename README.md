@@ -81,10 +81,8 @@ Indexing cost depends on codebase size:
 - ~2,000 functions: ~$0.04 (using `text-embedding-3-small`)
 - Reindexing only needed when code changes significantly
 
-## License
-
-[Add your license here]
 
 ## Contributing
 
-[Add contributing guidelines if open-sourcing]
+Raise a PR
+Please add a doc explaining what you are trying to do.
