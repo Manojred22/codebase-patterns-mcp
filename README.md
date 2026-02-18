@@ -1,35 +1,61 @@
 # Codebase Patterns MCP Server
 
-MCP server providing Claude Code with semantic access to your codebase patterns through intelligent code search.
+MCP server that gives Claude Code semantic access to your team's codebase patterns — so generated code follows your internal standards from day one.
 
-## What is This?
+## The Problem
 
-This MCP (Model Context Protocol) server enables Claude Code to semantically search your codebase. Instead of manually finding and passing relevant code examples, Claude can automatically discover existing patterns, conventions, and implementations from your repositories.
+When you ask Claude to "add telemetry tracing", it generates generic code pointing to `localhost` with no compliance fields. Your team already has an internal telemetry library with specific endpoints, required fields, and conventions. Claude doesn't know about it.
+
+## The Solution
+
+This MCP server indexes your repositories and exposes a `search_code` tool. When Claude needs to write code for common concerns (auth, telemetry, database, HTTP clients), it searches your codebase first and generates code that follows your team's actual patterns.
+
+**Same prompt, completely different output:**
+
+| Without MCP | With MCP |
+|-------------|----------|
+| `jaeger.New(jaeger.WithEndpoint("localhost:14268"))` | `telemetry.NewTracer(AcmeTracerConfig{TeamLabel: "platform", CostCenter: "CC-1234"})` |
+| Generic Jaeger exporter | Team's OTLP exporter to `telemetry.internal.acme.com` |
+| No compliance fields | `TeamLabel` + `CostCenter` required for billing |
+
+## Search Quality
+
+Evaluated against 8 ground-truth queries across telemetry, auth, HTTP clients, database repos, and error handling:
+
+| Metric | Score | Target |
+|--------|-------|--------|
+| Recall@5 | **100%** | 80% |
+| Precision@3 | **95.8%** | 80% |
+| MRR | **100%** | 85% |
+| Recall@3 | **82.7%** | 90% |
+
+Every query finds a relevant result at rank 1. All expected results appear within the top 5.
 
 ## Key Features
 
-- **Semantic Code Search**: Find relevant code by meaning, not just keywords
-- **Function-Level Indexing**: Indexes individual functions with metadata (type, purpose, etc.)
-- **Fast Vector Search**: Powered by ChromaDB for efficient similarity search
-- **OpenAI Embeddings**: Uses `text-embedding-3-small` for high-quality semantic understanding
-- **Claude Code Integration**: Seamlessly works with Claude Code via MCP protocol
+- **Semantic Code Search** — find code by meaning, not keywords
+- **Multi-Language Support** — Go, Java, Python, JavaScript, TypeScript
+- **Pattern Detection** — factory, singleton, builder, strategy, decorator, observer, repository
+- **Framework Detection** — Spring Boot, Flask, Express, NestJS, Django, FastAPI, and more
+- **Function-Level Indexing** — each function indexed with rich metadata
+- **Request Logging** — structured JSONL logs for every MCP tool call
+- **Eval Framework** — ground truth queries, metrics, and automated reporting
 
 ## Quick Start
 
 ```bash
 # 1. Clone and setup
-git clone <your-repo>
+git clone https://github.com/Manojred22/codebase-patterns-mcp.git
 cd codebase-patterns-mcp
 python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate
 pip install -r requirements.txt
 
 # 2. Configure
 cp .env.template .env
-# Edit .env and add your OpenAI API key
+# Edit .env and add your OPENAI_API_KEY
 
-# 3. Add your repositories
-# Place your repos in the ./repos directory
+# 3. Add your repositories to ./repos/
 
 # 4. Index your code
 python index_repos.py
@@ -37,11 +63,39 @@ python index_repos.py
 # 5. Test the search
 python search_cli.py "authentication handler"
 
-# 6. Set up MCP server for Claude Code
+# 6. Configure MCP server for Claude Code
 cp .mcp.json.template .mcp.json
 # Edit .mcp.json with your absolute paths
-# Then configure in Claude Code settings
 ```
+
+## Try the Demo
+
+Run the full demo with the included sample repos (Acme-branded code across 5 languages):
+
+```bash
+bash demo/setup_demo.sh
+```
+
+This copies sample repos, indexes them, runs the eval, and shows the before/after demo. You'll see:
+
+1. **Scene 1** — Claude's generic output (Jaeger, localhost, no compliance)
+2. **Scene 2** — Live MCP search results with actual source code
+3. **Scene 3** — Claude's output using team patterns (internal endpoints, compliance fields)
+
+To run individual steps:
+
+```bash
+# Just the eval (after indexing)
+python eval/run_eval.py
+
+# Just the demo
+python eval/demo.py
+
+# Check tool routing after running prompts through Claude Code
+python -c "from eval.tool_routing import generate_routing_checklist; print(generate_routing_checklist())"
+```
+
+Results are saved to `data/eval/report.md` and `data/eval/results.json`.
 
 ## Architecture
 
@@ -49,31 +103,45 @@ cp .mcp.json.template .mcp.json
 Your Repos → Indexer (tree-sitter) → Embeddings (OpenAI) → Vector DB (Chroma) → MCP Server → Claude Code
 ```
 
-## Use Cases
+## Make Claude Use Your Patterns Proactively
 
-- **Pattern Discovery**: "Show me how we handle authentication"
-- **Convention Learning**: Find naming conventions, directory structures
-- **Code Reuse**: Discover existing implementations before building new ones
-- **Onboarding**: Help new developers learn the codebase quickly
+By default, Claude only searches when you explicitly ask. To make it **automatically check internal code before generating new code**:
+
+1. Copy `CLAUDE.md.template` to your project root as `CLAUDE.md`
+2. Customize it with your project-specific rules
+
+This tells Claude to search the team's codebase library before writing code for common concerns — so it uses your internal libraries instead of generic alternatives.
+
+## Project Structure
+
+```
+src/                     # Core server and indexing
+  mcp_server.py          # MCP JSON-RPC server (search_code + get_stats tools)
+  request_logger.py      # Structured JSONL request logging
+  indexer.py             # Multi-language code indexer
+  embeddings.py          # OpenAI embedding generator
+  vector_store.py        # ChromaDB vector store
+  parsers/               # Tree-sitter parsers (Go, Java, Python, JS, TS)
+  detectors/             # Pattern and framework detection
+
+eval/                    # Evaluation framework
+  ground_truth.py        # 8 test queries with expected results
+  search_quality.py      # Recall@K, Precision@K, MRR metrics
+  run_eval.py            # Main eval runner
+  report.py              # Markdown report generator
+  demo.py                # Before/after demo for presentations
+  tool_routing.py        # Tool routing verification checklist
+  code_quality.py        # Pattern conformance checker
+
+sample-repos/            # Acme-branded sample code (5 languages, 27 files)
+demo/setup_demo.sh       # One-command demo setup
+```
 
 ## Requirements
 
 - Python 3.9+
 - OpenAI API key
-- Go repositories (currently supports Go, extensible to other languages)
-
-## Documentation
-
-- `CONTEXT.md` - Project overview and motivation
-- `docs/setup-guide.md` - Detailed setup instructions
-- `docs/mcp-server-usage.md` - MCP server configuration
-- `docs/phase1-architecture.md` - Technical architecture details
-
-## Project Status
-
-✅ Phase 1: Semantic search with function-level indexing
-✅ Phase 2: MCP server implementation
-🔄 Phase 3: Testing and refinement
+- Supported languages: Go, Java, Python, JavaScript, TypeScript
 
 ## Cost
 
@@ -81,8 +149,6 @@ Indexing cost depends on codebase size:
 - ~2,000 functions: ~$0.04 (using `text-embedding-3-small`)
 - Reindexing only needed when code changes significantly
 
-
 ## Contributing
 
-Raise a PR
-Please add a doc explaining what you are trying to do.
+Raise a PR with a doc explaining what you're trying to do.
