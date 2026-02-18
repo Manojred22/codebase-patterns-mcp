@@ -15,7 +15,7 @@ class GoParser(BaseParser):
         super().__init__("go")
 
     def parse_file(self, file_path: str, content: str) -> List[CodeFunction]:
-        tree = self.parser.parse(bytes(content, "utf8"))
+        tree = self._parse_tree(content)
         root = tree.root_node
 
         functions = []
@@ -38,14 +38,15 @@ class GoParser(BaseParser):
             full_code = self._node_text(node, content)
 
             # Signature: first line
-            signature_end = content.find('\n', node.start_byte)
+            b = self._content_bytes
+            signature_end = b.find(b'\n', node.start_byte)
             if signature_end == -1:
                 signature_end = node.end_byte
-            signature = content[node.start_byte:signature_end].strip()
+            signature = b[node.start_byte:signature_end].decode("utf-8", errors="replace").strip()
 
             # Body: everything from opening brace
-            body_start = content.find('{', node.start_byte)
-            body = content[body_start:node.end_byte] if body_start != -1 else full_code
+            body_start = b.find(b'{', node.start_byte)
+            body = b[body_start:node.end_byte].decode("utf-8", errors="replace") if body_start != -1 else full_code
 
             is_method = receiver is not None
             is_exported = name[0].isupper() if name else True

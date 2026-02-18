@@ -18,6 +18,12 @@ class BaseParser(ABC):
         self.parser = tree_sitter.Parser()
         self.parser.set_language(language)
         self.language_name = language_name
+        self._content_bytes: bytes = b""  # set per parse_file call
+
+    def _parse_tree(self, content: str):
+        """Parse content and cache the byte representation for node text extraction."""
+        self._content_bytes = bytes(content, "utf-8")
+        return self.parser.parse(self._content_bytes)
 
     @abstractmethod
     def parse_file(self, file_path: str, content: str) -> List[CodeFunction]:
@@ -32,7 +38,7 @@ class BaseParser(ABC):
 
     def _node_text(self, node, content: str) -> str:
         """Get the source text for a tree-sitter node."""
-        return content[node.start_byte:node.end_byte]
+        return self._content_bytes[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
 
     def _get_preceding_comments(self, node, content: str) -> Optional[str]:
         """Get comment block immediately above a node."""

@@ -9,11 +9,13 @@ Compatible with Python 3.9+ (no MCP SDK required)
 import sys
 import json
 import os
+import time
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 
 from .vector_store import VectorStore
 from .embeddings import EmbeddingGenerator
+from .request_logger import RequestLogger
 
 # Load environment
 load_dotenv()
@@ -34,6 +36,8 @@ class MCPServer:
             persist_directory=chroma_path,
             embedding_generator=embedding_generator,
         )
+
+        self.request_logger = RequestLogger()
 
         self.log("Company Patterns MCP Server initialized")
         self.log(f"Vector DB: {chroma_path}")
@@ -96,13 +100,36 @@ class MCPServer:
             "tools": [
                 {
                     "name": "search_code",
-                    "description": "Search for code functions using semantic search. Returns relevant functions with full source code from the indexed codebase.",
+                    "description": (
+                        "Search the team's shared codebase library for reusable implementations and patterns. "
+                        "This searches ACROSS MULTIPLE REPOSITORIES (not the current project) using semantic similarity. "
+                        "Returns full source code of matching functions with design pattern and framework annotations.\n\n"
+                        "WHEN TO USE:\n"
+                        "1. BEFORE writing new code for common concerns — authentication, telemetry/observability, "
+                        "logging, database access, error handling, API clients, middleware, configuration, caching, "
+                        "retry logic, circuit breakers, rate limiting, validation. The team likely has existing "
+                        "implementations and preferred libraries. Search first, then generate code that follows "
+                        "the team's established patterns.\n"
+                        "2. When the user asks conceptual questions like 'how do we handle X', 'show me examples of Y', "
+                        "'what patterns do we use for Z'.\n"
+                        "3. When you're about to recommend a third-party library — check if the team already has "
+                        "an internal wrapper or preferred alternative.\n\n"
+                        "WHEN NOT TO USE:\n"
+                        "- Finding specific symbols, files, or definitions in the CURRENT project (use Grep/Glob/Read).\n"
+                        "- Exact function name lookups like 'findUserById' (use Grep).\n"
+                        "- Reading or modifying files in the current working directory."
+                    ),
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "Natural language or code search query (e.g., 'JWT authentication', 'database transaction handling')",
+                                "description": (
+                                    "A conceptual or natural language query describing what kind of code you're looking for. "
+                                    "Good: 'JWT token validation', 'retry logic with exponential backoff', 'REST API error handling', "
+                                    "'OpenTelemetry instrumentation', 'HTTP client with retry'. "
+                                    "Bad: 'findUserById' (use Grep for exact symbol names)."
+                                ),
                             },
                             "limit": {
                                 "type": "integer",
@@ -111,7 +138,7 @@ class MCPServer:
                             },
                             "code_type": {
                                 "type": "string",
-                                "description": "Filter by code type: handler, middleware, service, repository, model, utility, client, other",
+                                "description": "Filter by architectural role of the code",
                                 "enum": ["handler", "middleware", "service", "repository", "model", "utility", "client", "other"],
                             },
                             "language": {
@@ -121,11 +148,11 @@ class MCPServer:
                             },
                             "pattern": {
                                 "type": "string",
-                                "description": "Filter by design pattern (e.g., factory, singleton, builder, strategy, decorator, observer, repository)",
+                                "description": "Filter by design pattern: factory, singleton, builder, strategy, decorator, observer, repository",
                             },
                             "framework": {
                                 "type": "string",
-                                "description": "Filter by framework (e.g., spring_boot, flask, django, fastapi, express, react, nextjs)",
+                                "description": "Filter by framework: spring_boot, spring_mvc, jpa, flask, django, fastapi, express, react, nextjs, nestjs, angular",
                             },
                         },
                         "required": ["query"],
@@ -133,7 +160,13 @@ class MCPServer:
                 },
                 {
                     "name": "get_stats",
-                    "description": "Get statistics about the indexed codebase (total functions, repositories, code types, languages, patterns, frameworks)",
+                    "description": (
+                        "Get a summary of what's in the team's shared codebase library — "
+                        "how many functions are indexed, which repositories, languages, "
+                        "design patterns, and frameworks are represented. "
+                        "Use this to understand what's available before searching, "
+                        "or when the user asks about the team's tech stack or codebase composition."
+                    ),
                     "inputSchema": {
                         "type": "object",
                         "properties": {},
@@ -143,16 +176,39 @@ class MCPServer:
         }
 
     def handle_tools_call(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute a tool."""
+        """Execute a tool with timing and structured logging."""
         tool_name = params.get("name")
         arguments = params.get("arguments", {})
 
-        if tool_name == "search_code":
-            return self.tool_search_code(arguments)
-        elif tool_name == "get_stats":
-            return self.tool_get_stats()
-        else:
-            raise ValueError(f"Unknown tool: {tool_name}")
+        start = time.monotonic()
+        error_msg = None
+        result_count = None
+        try:
+            if tool_name == "search_code":
+                result = self.tool_search_code(arguments)
+                # Parse result_count from search response
+                try:
+                    text = result["content"][0]["text"]
+                    result_count = json.loads(text).get("results_count")
+                except (KeyError, IndexError, json.JSONDecodeError):
+                    pass
+                return result
+            elif tool_name == "get_stats":
+                return self.tool_get_stats()
+            else:
+                raise ValueError(f"Unknown tool: {tool_name}")
+        except Exception as e:
+            error_msg = str(e)
+            raise
+        finally:
+            latency_ms = (time.monotonic() - start) * 1000
+            self.request_logger.log_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                result_count=result_count,
+                latency_ms=latency_ms,
+                error=error_msg,
+            )
 
     def tool_search_code(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Search code tool implementation with multi-filter support."""

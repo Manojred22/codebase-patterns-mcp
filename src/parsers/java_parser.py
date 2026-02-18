@@ -18,7 +18,7 @@ class JavaParser(BaseParser):
         return {"comment", "line_comment", "block_comment"}
 
     def parse_file(self, file_path: str, content: str) -> List[CodeFunction]:
-        tree = self.parser.parse(bytes(content, "utf8"))
+        tree = self._parse_tree(content)
         root = tree.root_node
 
         functions: List[CodeFunction] = []
@@ -204,10 +204,11 @@ class JavaParser(BaseParser):
         return self._node_text(name_node, content) if name_node else None
 
     def _get_signature_line(self, node, content: str) -> str:
-        sig_end = content.find('\n', node.start_byte)
+        b = self._content_bytes
+        sig_end = b.find(b'\n', node.start_byte)
         if sig_end == -1:
             sig_end = node.end_byte
-        return content[node.start_byte:sig_end].strip()
+        return b[node.start_byte:sig_end].decode("utf-8", errors="replace").strip()
 
     def _get_modifiers(self, node, content: str) -> List[str]:
         modifiers = []

@@ -15,7 +15,7 @@ class PythonParser(BaseParser):
         super().__init__("python")
 
     def parse_file(self, file_path: str, content: str) -> List[CodeFunction]:
-        tree = self.parser.parse(bytes(content, "utf8"))
+        tree = self._parse_tree(content)
         root = tree.root_node
 
         functions: List[CodeFunction] = []
@@ -154,12 +154,13 @@ class PythonParser(BaseParser):
 
     def _get_signature(self, node, content: str) -> str:
         """Get the def/class line (up to the colon)."""
-        sig_end = content.find(':', node.start_byte)
+        b = self._content_bytes
+        sig_end = b.find(b':', node.start_byte)
         if sig_end == -1 or sig_end > node.end_byte:
-            sig_end = content.find('\n', node.start_byte)
+            sig_end = b.find(b'\n', node.start_byte)
             if sig_end == -1:
                 sig_end = node.end_byte
-        return content[node.start_byte:sig_end + 1].strip()
+        return b[node.start_byte:sig_end + 1].decode("utf-8", errors="replace").strip()
 
     def _get_inner_definition(self, decorated_node):
         """Get the function_definition or class_definition inside a decorated_definition."""
