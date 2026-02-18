@@ -1,330 +1,174 @@
-# Quick Setup Guide - Get Running in 30 Minutes
+# Setup Guide
 
-## Step 1: Environment Setup (10 minutes)
+## Prerequisites
 
-### Create Project Directory
+- Python 3.9+
+- An [OpenAI API key](https://platform.openai.com/api-keys) (for embeddings)
+- Your team's repositories (Go, Java, Python, JavaScript, or TypeScript)
+
+## Step 1: Install
+
 ```bash
-mkdir codebase-rag
-cd codebase-rag
-```
-
-### Create Python Virtual Environment
-```bash
-# Create venv
+git clone https://github.com/Manojred22/codebase-patterns-mcp.git
+cd codebase-patterns-mcp
 python3 -m venv venv
-
-# Activate (Mac/Linux)
-source venv/bin/activate
-
-# Activate (Windows)
-venv\Scripts\activate
-```
-
-### Install Dependencies
-The starter code automatically creates `requirements.txt` when you run it, or create manually:
-
-```bash
-# Save this as requirements.txt
-cat > requirements.txt << EOF
-llama-index
-llama-index-embeddings-openai
-llama-index-llms-anthropic
-llama-index-vector-stores-chroma
-chromadb
-tree-sitter
-tree-sitter-go
-python-dotenv
-EOF
-
-# Install
+source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Set API Keys
-```bash
-# Option 1: Environment variables
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
+## Step 2: Configure
 
-# Option 2: .env file (better)
-cat > .env << EOF
+```bash
+cp .env.template .env
+```
+
+Edit `.env` and set your OpenAI API key:
+
+```
 OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-EOF
 ```
 
-**Get API Keys:**
-- OpenAI: https://platform.openai.com/api-keys
-- Anthropic: https://console.anthropic.com/settings/keys
+Optional settings (defaults are fine for most cases):
 
----
+```
+CHROMA_PATH=./data/chroma_db    # Where the vector database is stored
+REPOS_PATH=./repos              # Where your repositories live
+```
 
-## Step 2: Prepare Your Go Repos (10 minutes)
+## Step 3: Add Your Repositories
 
-### Create Repo Directory
+Place your team's repositories in the `repos/` directory:
+
 ```bash
-mkdir go-repos
-cd go-repos
+mkdir -p repos
+
+# Option A: Clone repos
+git clone https://github.com/your-org/auth-service repos/auth-service
+git clone https://github.com/your-org/api-gateway repos/api-gateway
+
+# Option B: Copy existing repos
+cp -r ~/projects/auth-service repos/
+cp -r ~/projects/api-gateway repos/
 ```
 
-### Option A: Clone Repos
+The indexer automatically skips test files, vendor directories, node_modules, build artifacts, and generated code.
+
+Supported file types:
+- `.go` — Go
+- `.java` — Java
+- `.py` — Python
+- `.js`, `.jsx` — JavaScript
+- `.ts`, `.tsx` — TypeScript
+
+## Step 4: Index Your Code
+
 ```bash
-# Clone your 5-10 selected repos
-git clone <repo1-url>
-git clone <repo2-url>
-# ... etc
+python index_repos.py
 ```
 
-### Option B: Copy Existing Repos
+First run takes 1-5 minutes depending on codebase size. You'll see:
+
+```
+[1/3] Parsing repositories...
+  Repo: auth-service — 47 functions
+  Repo: api-gateway — 83 functions
+[2/3] Generating embeddings...
+[3/3] Storing in vector database...
+Total functions: 130
+```
+
+To re-index from scratch (clears existing data):
+
 ```bash
-# Copy from your workspace
-cp -r ~/projects/auth-service ./
-cp -r ~/projects/api-gateway ./
-# ... etc
+python index_repos.py --reset
 ```
 
-### Recommended Structure
-```
-go-repos/
-├── auth-service/
-│   ├── main.go
-│   ├── auth/
-│   │   ├── jwt.go
-│   │   └── middleware.go
-│   └── ...
-├── api-gateway/
-│   ├── main.go
-│   └── ...
-└── database-utils/
-    └── ...
-```
+## Step 5: Test the Search
 
-**Important:** Remove unnecessary files to speed up indexing:
 ```bash
-cd go-repos
-
-# Remove git histories
-find . -name ".git" -type d -exec rm -rf {} +
-
-# Remove dependencies
-find . -name "vendor" -type d -exec rm -rf {} +
-find . -name "node_modules" -type d -exec rm -rf {} +
-
-# Remove test files (optional, but reduces noise)
-find . -name "*_test.go" -delete
+python search_cli.py "authentication middleware"
 ```
 
----
+You should see relevant functions from your repos with source code, patterns detected, and relevance scores.
 
-## Step 3: First Run (5 minutes)
+## Step 6: Connect to Claude Code
 
-### Copy Starter Code
-Save the "LlamaIndex RAG Implementation" artifact as `rag_system.py` in your project root.
+Create `.mcp.json` in your project root (or wherever you use Claude Code):
 
-### Directory Structure Should Be:
+```json
+{
+  "mcpServers": {
+    "codebase-patterns": {
+      "command": "/absolute/path/to/codebase-patterns-mcp/venv/bin/python",
+      "args": ["-m", "src.mcp_server"],
+      "cwd": "/absolute/path/to/codebase-patterns-mcp",
+      "env": {
+        "OPENAI_API_KEY": "sk-..."
+      }
+    }
+  }
+}
 ```
-codebase-rag/
-├── venv/
-├── go-repos/
-│   ├── auth-service/
-│   ├── api-gateway/
-│   └── ...
-├── rag_system.py
-├── requirements.txt
-└── .env
-```
 
-### Run It!
+Replace the paths with your actual absolute paths. Then restart Claude Code — it will pick up the MCP server automatically.
+
+## Step 7: Make Claude Search Proactively (Optional)
+
+By default, Claude only calls `search_code` when you explicitly ask about patterns. To make it search automatically before writing code:
+
 ```bash
-python rag_system.py
+cp CLAUDE.md.template CLAUDE.md
 ```
 
-**What will happen:**
-1. Creates `chroma_db/` directory
-2. Loads all Go files from `go-repos/`
-3. Parses Go code into functions
-4. Creates embeddings (takes 1-5 minutes depending on size)
-5. Stores in Chroma vector database
-6. Opens interactive query prompt
+Edit `CLAUDE.md` to match your project. This tells Claude to always check the team's codebase library before writing code for common concerns (telemetry, auth, database access, etc.).
 
-### First Test Query
-```
-💬 Your question: How do we validate JWT tokens?
-```
+## Step 8: Verify It Works
 
-You should see:
-- Claude's answer based on your code
-- 5 retrieved source chunks
-- File paths and relevance scores
+Ask Claude Code something like:
 
----
+> "Add authentication middleware to this service"
 
-## Step 4: Verify It's Working (5 minutes)
+Claude should call `search_code`, find your team's auth patterns, and generate code that uses your internal libraries and conventions.
 
-### Test Different Query Types
+Check the MCP request log to confirm:
 
-**1. Specific function:**
-```
-Where is the database connection pool configured?
-```
-
-**2. Pattern/practice:**
-```
-Show me error handling patterns in the API
-```
-
-**3. Cross-file question:**
-```
-How do authentication and authorization work together?
-```
-
-### Check Retrieval Quality
-Look at the sources. Ask yourself:
-- Are the retrieved files actually relevant?
-- Is the top source the most relevant?
-- Are important files missing?
-
-**If retrieval looks bad:**
-- Chunk size might be wrong
-- Need better metadata
-- Will tune tomorrow (Saturday)
-
----
-
-## Common Issues & Fixes
-
-### Issue: "ModuleNotFoundError: No module named 'llama_index'"
-**Fix:** Make sure venv is activated
 ```bash
-source venv/bin/activate  # or venv\Scripts\activate
+cat data/logs/mcp-requests-*.jsonl
+```
+
+You should see a structured log entry for the `search_code` call.
+
+## Troubleshooting
+
+### "ModuleNotFoundError"
+
+Make sure the virtual environment is activated:
+
+```bash
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Issue: "tree-sitter not available"
-**Fix:** Install tree-sitter separately
+### "No results found"
+
+Check that repos are indexed:
+
 ```bash
-pip install tree-sitter tree-sitter-go
+python search_cli.py --stats
 ```
 
-**Fallback:** The code will work without tree-sitter, just with simpler chunking.
+If count is 0, run `python index_repos.py` again.
 
-### Issue: "No documents loaded"
-**Fix:** Check your `repos_path` in the config
-```python
-config = Config(
-    repos_path="./go-repos",  # Make sure this path is correct
-)
+### MCP server not connecting in Claude Code
+
+- Verify the paths in `.mcp.json` are absolute paths
+- Check that the Python path points to the venv Python, not system Python
+- Look at Claude Code's MCP server logs for errors
+
+### FutureWarning from tree-sitter
+
+```
+FutureWarning: Language(path, name) is deprecated...
 ```
 
-### Issue: Indexing takes forever (>10 minutes)
-**Fix:** You might have too many files. Check:
-```bash
-find go-repos -type f | wc -l
-```
-
-If >1000 files, start with fewer repos (2-3) for tonight.
-
-### Issue: "Rate limit exceeded" from OpenAI
-**Fix:** You're embedding too much too fast. 
-```python
-# Add to config
-chunk_size: int = 1000  # Larger chunks = fewer API calls
-```
-
-Or wait a few minutes and try again.
-
----
-
-## Success Checklist ✓
-
-After setup, you should have:
-- [ ] Python environment working
-- [ ] API keys configured
-- [ ] 5-10 Go repos in `go-repos/` directory
-- [ ] `rag_system.py` running without errors
-- [ ] Vector index built (`chroma_db/` exists)
-- [ ] Able to query and get responses
-- [ ] Responses reference your actual code
-
-**Time check:** If you finished in 30 mins, great! If not, no worries - getting it working is what matters.
-
----
-
-## What's Next?
-
-### Tonight (if you have time):
-1. **Create test queries list**
-   - 15-20 questions about your codebase
-   - Save to `test_queries.json`
-   - Manually identify relevant files for each
-
-2. **Try a few queries**
-   - Get a feel for retrieval quality
-   - Note what works well, what doesn't
-
-### Tomorrow Morning (Saturday):
-- Improve chunking based on what you learned
-- Add metadata filtering
-- Tune retrieval parameters
-- Start building evaluation framework
-
----
-
-## Quick Reference
-
-### Rebuild Index
-```python
-# In interactive mode, type:
-rebuild
-```
-
-Or restart with:
-```bash
-rm -rf chroma_db/
-python rag_system.py
-```
-
-### Check What's Indexed
-```python
-from chromadb import PersistentClient
-
-client = PersistentClient(path="./chroma_db")
-collection = client.get_collection("codebase")
-print(f"Total chunks: {collection.count()}")
-```
-
-### Query Programmatically
-```python
-from rag_system import CodebaseRAG, Config
-
-config = Config(repos_path="./go-repos")
-rag = CodebaseRAG(config)
-rag.build_index()
-
-result = rag.query("How do we handle errors?")
-print(result['answer'])
-```
-
----
-
-## Need Help?
-
-**Debug mode:** Add this at the top of `rag_system.py`:
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
-**Test without full system:**
-```python
-# Just test loading
-loader = CodebaseLoader(config)
-docs = loader.load_documents()
-print(f"Loaded {len(docs)} documents")
-for doc in docs[:3]:
-    print(doc.metadata)
-```
-
----
-
-You're ready! 🚀 Let's build this thing.
+This is a harmless warning from the `tree_sitter_languages` package. It doesn't affect functionality.

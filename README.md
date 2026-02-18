@@ -68,6 +68,8 @@ cp .mcp.json.template .mcp.json
 # Edit .mcp.json with your absolute paths
 ```
 
+For detailed step-by-step instructions, see [docs/setup-guide.md](docs/setup-guide.md).
+
 ## Try the Demo
 
 Run the full demo with the included sample repos (Acme-branded code across 5 languages):
@@ -111,6 +113,95 @@ By default, Claude only searches when you explicitly ask. To make it **automatic
 2. Customize it with your project-specific rules
 
 This tells Claude to search the team's codebase library before writing code for common concerns — so it uses your internal libraries instead of generic alternatives.
+
+## Measuring Efficiency on Your Own Codebase
+
+Once you're using the MCP server on a real project, here's how to measure whether it's actually helping.
+
+### What Gets Logged
+
+Every `search_code` call is logged to `data/logs/mcp-requests-YYYY-MM-DD.jsonl`. Each entry records:
+
+```json
+{
+  "timestamp": "2026-02-18T15:01:22Z",
+  "tool_name": "search_code",
+  "query": "authentication middleware",
+  "filters": {"language": "go"},
+  "limit": 5,
+  "result_count": 5,
+  "latency_ms": 142.3,
+  "error": null
+}
+```
+
+This gives you a full audit trail of what Claude searched for and what it found.
+
+### Run the Eval on Your Code
+
+Write your own ground truth queries in `eval/ground_truth.py` — queries that matter for your team, with the function IDs you expect to find. Then run:
+
+```bash
+python eval/run_eval.py
+```
+
+This produces `data/eval/report.md` with Recall@K, Precision@K, and MRR scores, plus a per-query breakdown showing exactly which results were found and which were missed.
+
+### Check Code Quality
+
+After Claude generates code using MCP results, check if it followed your patterns:
+
+```python
+from eval.code_quality import check_code_quality
+
+result = check_code_quality(generated_code, "telemetry")
+print(result)
+# {'score': 1.0, 'acme_markers_found': ['AcmeTracerConfig', 'TeamLabel'], 'generic_markers_found': [], 'verdict': 'conformant'}
+```
+
+Edit the marker lists in `eval/code_quality.py` to match your team's identifiers instead of the Acme defaults.
+
+### Verify Tool Routing
+
+Check whether Claude is calling `search_code` when it should (and not calling it when it shouldn't):
+
+```bash
+python -c "from eval.tool_routing import generate_routing_checklist; print(generate_routing_checklist())"
+```
+
+This reads the JSONL logs and produces a pass/fail checklist. Edit the prompt lists in `eval/tool_routing.py` to match your team's common tasks.
+
+### What to Track Over Time
+
+| Question | Where to look |
+|----------|---------------|
+| Is Claude calling search_code? | `data/logs/mcp-requests-*.jsonl` — check `result_count > 0` |
+| Are search results relevant? | `python eval/run_eval.py` — Recall@5 and MRR |
+| Is generated code using our patterns? | `eval.code_quality.check_code_quality()` — conformance score |
+| How fast are searches? | JSONL logs — `latency_ms` field (should be <500ms) |
+| What queries are developers asking? | JSONL logs — `query` field, look for gaps in your indexed repos |
+
+### Adding Your Own Ground Truth
+
+Replace the sample queries in `eval/ground_truth.py` with queries relevant to your codebase:
+
+```python
+TestQuery(
+    id="your-auth",
+    query="JWT token validation middleware",
+    category="auth",
+    expected_ids=[
+        "your-repo/src/auth/middleware.go:ValidateJWT",
+        "your-repo/src/auth/token.go:ParseToken",
+    ],
+    expected_id_patterns=[
+        r"your-repo.*auth.*:ValidateJWT",
+        r"your-repo.*auth.*:ParseToken",
+    ],
+)
+```
+
+Run `python eval/run_eval.py` after indexing to see the actual function IDs, then update `expected_ids` to match.
 
 ## Project Structure
 
